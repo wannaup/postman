@@ -22,31 +22,33 @@ return all threads of 'authenticated' user
 
 out: 
 ```
-{ result: [
-  {
-    id: "...",
-    owner: {
-      id: "..."
-    },
-    msgs: [
-      {
-        from: "pinco@random.com",
-        to: "pallo@random.com",
-        body: "hello!"
+{ 
+  result: [
+    {
+      id: "...",
+      owner: {
+        id: "..."
       },
-      {
-        from: "pallo@random.com",
-        to: "pinco@random.com",
-        body: "Hi!"
-      }
-    ]
-  },
-  ...
+      msgs: [
+        {
+          from: "pinco@random.com",
+          to: "pallo@random.com",
+          body: "hello!"
+        },
+        {
+          from: "pallo@random.com",
+          to: "pinco@random.com",
+          body: "Hi!"
+        }
+      ]
+    },
+    ...
   ],
   paginator: {
     next: "url to next page",
     prev: "url to prev page",
   }
+}
 ```
 
 `GET   /threads/:id`
