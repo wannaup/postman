@@ -15,16 +15,33 @@ out:
 ``` 
 ```
 
-### Users
-`GET   /user/threads`
+### Threads
+`GET   /threads`
 
 return all threads of 'authenticated' user
 
 out: 
 ``` 
+{
+  id: "...",
+  owner: {
+    id: "..."
+  },
+  msgs: [
+    {
+      from: "pinco@random.com",
+      to: "pallo@random.com",
+      body: "hello!"
+    },
+    {
+      from: "pallo@random.com",
+      to: "pinco@random.com",
+      body: "Hi!"
+    }
+  ]
+}
 ```
 
-### Threads
 `GET   /threads/:id`
 
 return detail of a thread identified with id
@@ -43,9 +60,11 @@ in:
   owner: {
     id: "..."
   },
-  to: "pallo@random.com",
-  from: "pinco@random.com",
-  msg: "hello!"
+  msg: {
+    to: "pallo@random.com",
+    from: "pinco@random.com",
+    body: "hello!"
+  }
 }
 ```
 out: 
@@ -59,7 +78,7 @@ out:
     {
       from: "pinco@random.com",
       to: "pinco@random.com",
-      msg: "hello!"
+      body: "hello!"
     }
   ]
 }
@@ -87,12 +106,12 @@ out:
     {
       from: "pinco@random.com",
       to: "pallo@random.com",
-      msg: "hello!"
+      body: "hello!"
     },
     {
       from: "pallo@random.com",
       to: "pinco@random.com",
-      msg: "Hi!"
+      body: "Hi!"
     }
   ]
 }
