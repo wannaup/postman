@@ -1,8 +1,8 @@
 # postman
-A mail to threaded messaging microservice
+A mail to threaded messaging microservice in Go and SCALA
 
 ## Requirements
-
+Every request to the ```threads``` endpoint must be authenticated with basic HTTP auth header, the password **must not be empty** but actually it is not used/checked.
 ### Inbound
 `POST  /inbound`
 
@@ -15,37 +15,63 @@ out:
 ``` 
 ```
 
-### Users
-`GET   /user/threads`
+### Threads
+`GET   /threads`
 
-return all threads of 'authenticated' user
+return all threads of 'authenticated' user based on the auth header user
 
 out: 
-``` 
+```
+[
+  {
+    id: "...",
+    owner: {
+      id: "..."
+    },
+    msgs: [
+      {
+        from: "pinco@random.com",
+        to: "pinco@random.com",
+        msg: "hello!"
+      }
+    ]
+  }
+] 
 ```
 
-### Threads
 `GET   /threads/:id`
 
-return detail of a thread identified with id
+return detail of a thread identified with id verifying the owner of the thread is actually the authenticated user
 
 out: 
-``` 
+```  
+{
+  id: "...",
+  owner: {
+    id: "..."
+  },
+  msgs: [
+    {
+      from: "pinco@random.com",
+      to: "pinco@random.com",
+      msg: "hello!"
+    }
+  ]
+}
 ```
 
 `POST   /threads`
 
-create a new thread
+create a new thread, upon creation postman sends a mail containing the message *msg* to the *to* email address setting the sender as the *from* mail address and the *reply-to* field to the email address of the mail node (inbound.yourdomain.com).
 
 in:
 ``` 
 {
-  owner: {
-    id: "..."
-  },
-  to: "pallo@random.com",
+  
   from: "pinco@random.com",
+  to: "pinco@random.com",
   msg: "hello!"
+  
 }
 ```
 out: 
@@ -97,4 +123,3 @@ out:
   ]
 }
 ```
-
