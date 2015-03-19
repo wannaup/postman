@@ -29,10 +29,10 @@ func main() {
     LoadConfig("conf_debug.json", &config)
     router := mux.NewRouter().StrictSlash(true)
     router.HandleFunc("/inbound", ProcessInbound).Methods("POST")
-    router.HandleFunc("/threads", CreateThread).Methods("POST")
-    router.HandleFunc("/threads", GetAllThreads).Methods("GET")
-    router.HandleFunc("/threads/{threadId}", GetOneThread).Methods("GET")
-    router.HandleFunc("/threads/{threadId}/reply", ReplyThread).Methods("POST")
+    router.HandleFunc("/threads", CreateThread).Methods("POST")     //OK
+    router.HandleFunc("/threads", GetAllThreads).Methods("GET")     //OK
+    router.HandleFunc("/threads/{threadId}", GetOneThread).Methods("GET")   //OK
+    router.HandleFunc("/threads/{threadId}/reply", ReplyThread).Methods("POST") //OK
     n := negroni.Classic()
     n.Use(negroni.HandlerFunc(BasicAuthMiddleware))
     n.Use(MongoMiddleware())
@@ -50,16 +50,23 @@ func ProcessInbound(w http.ResponseWriter, r *http.Request) {
 
 func CreateThread(w http.ResponseWriter, r *http.Request) {
     var nMsg Message
-    UnmarshalObject(r.Body, nMsg)
+    err := UnmarshalObject(r.Body, &nMsg)
+    log.Println("%v",nMsg)
+    if err != nil{
+        http.Error(w, "Your JSON is not GOOD", http.StatusBadRequest)
+        return
+    }
     thedb := context.Get(r, db).(*mgo.Database)
     tColl := thedb.C("message_threads")
     var owner = Owner{bson.ObjectIdHex(context.Get(r, userId).(string))}
     nThread := Thread{bson.NewObjectId(), owner, []Message{nMsg}}
-    err := tColl.Insert(nThread)
-    
+    err = tColl.Insert(nThread)
     if err != nil {
         log.Fatal(err)
     }
+    //actually send out the mail
+    go MandrillSendMail(config, nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    //config thread creation
     JSONResponse(w, nThread)
 }
 
@@ -97,7 +104,54 @@ func GetOneThread(w http.ResponseWriter, r *http.Request) {
 }
 
 func ReplyThread(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))
+    tId := mux.Vars(r)["threadId"]
+    //verify threadid is a valid objectid
+    if !bson.IsObjectIdHex(tId) {
+        http.Error(w, "NO auth header", http.StatusBadRequest)
+        return
+    }
+    //unmarshal the new message to add
+    var nMsg Message
+    err := UnmarshalObject(r.Body, &nMsg)
+    if err != nil{
+        http.Error(w, "Your JSON is not GOOD", http.StatusBadRequest)
+        return
+    }
+    //now let's find out to who we need to send the reply to, avoiding loops
+    var thread Thread
+    tColl := context.Get(r, db).(*mgo.Database).C("message_threads")
+    err = tColl.Find(bson.M{"_id": bson.ObjectIdHex(tId),"owner.id": bson.ObjectIdHex(context.Get(r, userId).(string))}).One(&thread)
+    if err != nil {
+        http.Error(w, "Can't get your thread", http.StatusInternalServerError)
+        return
+    }
+    for i := len(thread.Messages)-1; i >= 0; i-- {
+        if thread.Messages[i].From != nMsg.From {
+            nMsg.To = thread.Messages[i].From
+            break
+        }
+    }
+    //found?
+    if nMsg.To == "" {
+        http.Error(w, "Can't do this, loop will be", http.StatusInternalServerError)
+        return
+    }
+    //ready for update
+    err = tColl.Update(bson.M{"_id": bson.ObjectIdHex(tId), "owner.id": bson.ObjectIdHex(context.Get(r, userId).(string))}, bson.M{"$push": bson.M{"messages": nMsg}})
+    if err != nil {
+        if err == mgo.ErrNotFound{
+            http.Error(w, "NOT FOUND", http.StatusNotFound)
+            return
+        }
+        log.Fatal("Can't update document %v\n", err)
+        http.Error(w, "Can't update document", http.StatusInternalServerError)
+        return
+    }
+    //everything ok, send the mail
+    go MandrillSendMail(config, nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    // return the updated thread
+    thread.Messages[len(thread.Messages)] = nMsg
+    JSONResponse(w, thread)
 }
 
 
@@ -153,13 +207,10 @@ func BasicAuthMiddleware(rw http.ResponseWriter, r *http.Request, next http.Hand
 }
  
 
-//this middleware marshals json
-func UnmarshalObject(body io.Reader, obj interface{}) {
+//this unmarshals json
+func UnmarshalObject(body io.Reader, obj *Message) error{
     decoder := json.NewDecoder(body)
-    err := decoder.Decode(&obj)
-    if err != nil {
-        panic(err)
-    }
+    return decoder.Decode(obj)
 }
 
 //verifies the provided auth header values are actually valid 
@@ -178,3 +229,4 @@ func LoadConfig(fname string, config interface{}) {
         panic(err)
     }
 }
+

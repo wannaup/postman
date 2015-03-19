@@ -1,4 +1,7 @@
 {
 	"PORT": "3001",
-	"DBHOST": "127.0.0.1:27017"
+	"DBHOST": "127.0.0.1:27017",
+    "INBOUND_EMAIL": "",
+    "MANDRILL_API_URL": "https://mandrillapp.com/api/1.0/messages/send.json",
+    "MANDRILL_API_KEY": ""
 }
