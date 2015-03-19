@@ -7,6 +7,7 @@ import (
     "log"
     "net/http"
     "io"
+    "flag"
     "encoding/json"
     "encoding/base64"
     "strings"
@@ -26,19 +27,29 @@ const userId key = 1
 var config map[string]string
 
 func main() {
-    LoadConfig("conf_debug.json", &config)
+    //load configuration
+    LoadConfig(&config)
     router := mux.NewRouter().StrictSlash(true)
-    router.HandleFunc("/inbound", ProcessInbound).Methods("POST")
-    router.HandleFunc("/threads", CreateThread).Methods("POST")     //OK
-    router.HandleFunc("/threads", GetAllThreads).Methods("GET")     //OK
-    router.HandleFunc("/threads/{threadId}", GetOneThread).Methods("GET")   //OK
-    router.HandleFunc("/threads/{threadId}/reply", ReplyThread).Methods("POST") //OK
     n := negroni.Classic()
+    //setup routing and middleware     
+    PrepareRouting(router, n)
+    //and run
+    n.Run(":" + config["PORT"])
+}
+
+//associates the routes to the router
+func PrepareRouting(rt *mux.Router, n *negroni.Negroni){
+    //routes
+    rt.HandleFunc("/inbound", ProcessInbound).Methods("POST")
+    rt.HandleFunc("/threads", CreateThread).Methods("POST")     //OK
+    rt.HandleFunc("/threads", GetAllThreads).Methods("GET")     //OK
+    rt.HandleFunc("/threads/{threadId}", GetOneThread).Methods("GET")   //OK
+    rt.HandleFunc("/threads/{threadId}/reply", ReplyThread).Methods("POST") //OK
+    //some middleware
     n.Use(negroni.HandlerFunc(BasicAuthMiddleware))
     n.Use(MongoMiddleware())
     // router goes last
-    n.UseHandler(router)
-    n.Run(":" + config["PORT"])
+    n.UseHandler(rt)
 }
 
 func ProcessInbound(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +62,6 @@ func ProcessInbound(w http.ResponseWriter, r *http.Request) {
 func CreateThread(w http.ResponseWriter, r *http.Request) {
     var nMsg Message
     err := UnmarshalObject(r.Body, &nMsg)
-    log.Println("%v",nMsg)
     if err != nil{
         http.Error(w, "Your JSON is not GOOD", http.StatusBadRequest)
         return
@@ -65,7 +75,7 @@ func CreateThread(w http.ResponseWriter, r *http.Request) {
         log.Fatal(err)
     }
     //actually send out the mail
-    go MandrillSendMail(config, nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    //go NewMailProvider(config).SendMail(nThread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
     //config thread creation
     JSONResponse(w, nThread)
 }
@@ -148,7 +158,8 @@ func ReplyThread(w http.ResponseWriter, r *http.Request) {
         return
     }
     //everything ok, send the mail
-    go MandrillSendMail(config, nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    //go NewMailProvider(config).SendMail(thread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
+
     // return the updated thread
     thread.Messages[len(thread.Messages)] = nMsg
     JSONResponse(w, thread)
@@ -208,9 +219,8 @@ func BasicAuthMiddleware(rw http.ResponseWriter, r *http.Request, next http.Hand
  
 
 //this unmarshals json
-func UnmarshalObject(body io.Reader, obj *Message) error{
-    decoder := json.NewDecoder(body)
-    return decoder.Decode(obj)
+func UnmarshalObject(body io.Reader, obj interface{}) error{
+    return json.NewDecoder(body).Decode(obj)
 }
 
 //verifies the provided auth header values are actually valid 
@@ -219,13 +229,15 @@ func IsUserIdValid(uid string) bool {
 }
 
 //loads the app configuration
-func LoadConfig(fname string, config interface{}) {
-    file, _ := os.Open(fname)
+func LoadConfig(config interface{}) {
+    fname := flag.String("c", "conf_debug.json", "path to JSON config file")
+    flag.Parse()
+    file, _ := os.Open(*fname)
     defer file.Close()
     decoder := json.NewDecoder(file)
     err := decoder.Decode(config)
     if err != nil {
-        fmt.Println("error loadin go config file:", err)
+        fmt.Println("error loading go config file:", err)
         panic(err)
     }
 }

@@ -1,11 +1,24 @@
 package main
 
 import (
+	"os"
     "log"
     "github.com/parnurzeal/gorequest"
 )
 
-type MandrillRecipient struct{
+type MailProvider interface {
+	SendMail (threadId string, from string, to []string, msg string)
+}
+
+func NewMailProvider(config map[string]string) MailProvider {
+	if config["MAIL_PROVIDER"] == "mandrill" {
+    	// load environment vars
+		return &MandrillMailProvider{os.Getenv("INBOUND_EMAIL_DOMAIN"), os.Getenv("MANDRILL_API_URL"), os.Getenv("MANDRILL_API_KEY")}
+	}
+	return nil
+}
+
+type MandrillRecipient struct {
 	Email 	string 	`json:"email"`
 	Name 	string `json:"name,omitempty"`
 }
@@ -22,13 +35,19 @@ type MandrillMsg struct {
 }
 
 
-func MandrillSendMail(config map[string]string, from string, to []string, msg string) {
+type MandrillMailProvider struct {
+	InboundEmailDomain 	string
+	ApiUrl 			string
+	ApiKey 			string
+}
+
+func (m *MandrillMailProvider) SendMail(threadId string, from string, to []string, msg string) {
 	//add recipients
     rcpts := []MandrillRecipient{}
     for i, val := range to {
     	rcpts[i] = MandrillRecipient{Email: val}
     }
-    hdr := map[string]string{"Reply-To": config["INBOUND_EMAIL"]}
+    hdr := map[string]string{"Reply-To": threadId + "@" + m.InboundEmailDomain}
 	mmsg := MandrillMsg{
 		msg,
 		msg,
@@ -38,9 +57,9 @@ func MandrillSendMail(config map[string]string, from string, to []string, msg st
 		rcpts,
 		hdr,
 	}
-	postData := map[string]interface{}{"key": config["MANDRILL_API_KEY"], "message": mmsg}
+	postData := map[string]interface{}{"key": m.ApiKey, "message": mmsg}
 	//send the mail using the HTTP JSON API
-	_, body, errs := gorequest.New().Post(config["MANDRILL_API_URL"]).
+	_, body, errs := gorequest.New().Post(m.ApiUrl).
 		Send(postData).
   		End()
   	if errs != nil {
@@ -50,3 +69,4 @@ func MandrillSendMail(config map[string]string, from string, to []string, msg st
     log.Println("Sent mail:", body)
     
 }
+
