@@ -28,6 +28,7 @@ var TestMandrillMsg = []byte(`{
             "Reply-To": ""
         }
     }`)
+
 var TestMandrillOKResp = []byte(`[
     {
         "email": "pallo@test.com",
@@ -45,23 +46,46 @@ var TestMandrillErrorResp = []byte(`[
     }
 ]`)
 
-var TestConfig map[string]string
+var TestMandrillInbound = []byte(`
+    [
+    {
+        "ts": 198743897,
+        "event": "inbound",
+        "msg": {
+            "html": "A test message",
+            "text": "A test message",
+            "subject": "Test subject",
+            "from_email": "pinco@test.com",
+            "from_name": "pinco@test.com",
+            "to": [
+                {
+                    "email": "$INBOUNDMAIL$",
+                    "name": "pallo@test.com"
+                }
+            ],
+            "headers": {
+                "Reply-To": ""
+            }
+        }
+    }
+]`)
+
 
 func TestSendMail(t *testing.T) {
-    LoadConfig("conf_debug.json", &TestConfig)
+    LoadConfig("conf_debug.json", &config)
     //fake server
     ts := httptest.NewServer(http.HandlerFunc(MockHandler))
     defer ts.Close()
-    TestConfig["MANDRILL_API_HOST"] = ts.URL
-    TestConfig["MANDRILL_API_KEY"] = "test key"
+    config["MANDRILL_API_HOST"] = ts.URL
+    config["MANDRILL_API_KEY"] = "test key"
     fmt.Println(ts.URL)
-    res := NewMailProvider(TestConfig).SendMail("testid", "pinco@test.com", []string{"pallo@test.com"}, "A test message")
+    res := NewMailProvider(config).SendMail("testid", "pinco@test.com", []string{"pallo@test.com"}, "A test message")
     require := require.New(t)
     require.Equal(res, true)
 }
 
 func MockHandler(w http.ResponseWriter, r *http.Request) {
-    if TestConfig["MAIL_PROVIDER"] == "mandrill" {
+    if config["MAIL_PROVIDER"] == "mandrill" {
         var rmm MandrillReq
         UnmarshalObject(r.Body, &rmm)
         //build the truth struct
@@ -72,7 +96,7 @@ func MockHandler(w http.ResponseWriter, r *http.Request) {
             return
         }
         mm.Headers["Reply-To"] = "testid" + "@" + config["INBOUND_EMAIL_DOMAIN"]
-        var tMReq = MandrillReq{TestConfig["MANDRILL_API_KEY"], mm}
+        var tMReq = MandrillReq{config["MANDRILL_API_KEY"], mm}
         if !reflect.DeepEqual(tMReq, rmm) {
            panic("ciao")
            http.Error(w, "Bad req", http.StatusBadRequest)

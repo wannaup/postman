@@ -3,11 +3,12 @@ package main
 import (
     "os"
     "fmt"
-    "html"
     "log"
     "net/http"
     "io"
     "flag"
+    "bytes"
+    "errors"
     "encoding/json"
     "encoding/base64"
     "strings"
@@ -30,10 +31,7 @@ func main() {
     fname := flag.String("c", "conf_debug.json", "path to JSON config file")
     flag.Parse()
     PreFlight(*fname)
-    router := mux.NewRouter().StrictSlash(true)
-    n := negroni.Classic()
-    //setup routing and middleware     
-    PrepareRouting(router, n)
+    n := StirNegroni()
     //and run
     n.Run(":" + config["PORT"])
 }
@@ -44,25 +42,63 @@ func PreFlight(fname string){
 }
 
 //associates the routes to the router
-func PrepareRouting(rt *mux.Router, n *negroni.Negroni){
+func StirNegroni() *negroni.Negroni{
+    n := negroni.Classic()
     //routes
+    rt := mux.NewRouter().StrictSlash(true)
     rt.HandleFunc("/inbound", ProcessInbound).Methods("POST")
-    rt.HandleFunc("/threads", CreateThread).Methods("POST")     //OK
-    rt.HandleFunc("/threads", GetAllThreads).Methods("GET")     //OK
-    rt.HandleFunc("/threads/{threadId}", GetOneThread).Methods("GET")   //OK
-    rt.HandleFunc("/threads/{threadId}/reply", ReplyThread).Methods("POST") //OK
+    authRoutes := mux.NewRouter().StrictSlash(true)
+    authRoutes.HandleFunc("/threads", CreateThread).Methods("POST")     //OK
+    authRoutes.HandleFunc("/threads", GetAllThreads).Methods("GET")     //OK
+    authRoutes.HandleFunc("/threads/{threadId}", GetOneThread).Methods("GET")   //OK
+    authRoutes.HandleFunc("/threads/{threadId}/reply", ReplyThread).Methods("POST") //OK
+    rt.PathPrefix("/threads").Handler(negroni.New(
+        negroni.HandlerFunc(BasicAuthMiddleware),
+        negroni.Wrap(authRoutes),
+    ))
     //some middleware
-    n.Use(negroni.HandlerFunc(BasicAuthMiddleware))
     n.Use(MongoMiddleware())
     // router goes last
     n.UseHandler(rt)
+    return n
 }
 
 func ProcessInbound(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-    todoId := vars["todoId"]
-    fmt.Fprintln(w, "Todo show:", todoId)
-    fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))
+    r.ParseMultipartForm(884808408)
+    mPostValue := r.FormValue("mandrill_events")
+    mEvents := []MandrillEvent{}
+    err := UnmarshalObject(bytes.NewBuffer([]byte(mPostValue)), &mEvents)
+    if err != nil{
+        http.Error(w, "Your JSON is not GOOD", http.StatusBadRequest)
+        log.Println(err.Error())
+        return
+    }
+    thedb := context.Get(r, db).(*mgo.Database)
+    tColl := thedb.C("message_threads")
+    //process inbound messages
+    for _, val := range mEvents {   //TODO one goroutine for each event could be interesting
+        if len(val.Msg.To) != 1{    //only one recipient is allowed
+            log.Println("Invalid TO field in inbound message.")
+            continue
+        }
+        //get thread id from To field
+        var tId = strings.Split(val.Msg.To[0].Email, "@")[0]
+        if !bson.IsObjectIdHex(tId) {
+            log.Println("Invalid thread identifier in address:", val.Msg.To)
+            continue
+        }
+        // TODO set message header unique id to avoid reprocessing
+        var thread Thread
+        nMsg := Message{From: val.Msg.From_email, Msg: val.Msg.Text}
+        err = AddThreadReply(tColl, tId, "", &nMsg, &thread)
+        if err != nil{
+            log.Fatal("Can't reply thread from inbound: %v\n", err)
+            continue
+        }
+        //send mail 
+        go NewMailProvider(config).SendMail(thread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    }
+    w.Write([]byte("OK"))
 }
 
 func CreateThread(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +155,7 @@ func GetOneThread(w http.ResponseWriter, r *http.Request) {
     JSONResponse(w, thread)
 }
 
+//handles request to add a reply to an existing thread
 func ReplyThread(w http.ResponseWriter, r *http.Request) {
     tId := mux.Vars(r)["threadId"]
     //verify threadid is a valid objectid
@@ -133,13 +170,31 @@ func ReplyThread(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Your JSON is not GOOD", http.StatusBadRequest)
         return
     }
-    //now let's find out to who we need to send the reply to, avoiding loops
+    bson.ObjectIdHex(context.Get(r, userId).(string))
     var thread Thread
     tColl := context.Get(r, db).(*mgo.Database).C("message_threads")
-    err = tColl.Find(bson.M{"_id": bson.ObjectIdHex(tId),"owner.id": bson.ObjectIdHex(context.Get(r, userId).(string))}).One(&thread)
+    err = AddThreadReply(tColl, tId, context.Get(r, userId).(string), &nMsg, &thread)
+    if err != nil{
+        log.Fatal("Can't reply thread: %v", err)
+        http.Error(w, "Can't reply thread", http.StatusInternalServerError)
+    }
+    //everything ok, send the mail
+    go NewMailProvider(config).SendMail(thread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
+
+    JSONResponse(w, thread)
+}
+
+//adds a new reply to an existing thread, updates the passed message and the passed thread
+func AddThreadReply(tColl *mgo.Collection, tId string, ownerId string, nMsg *Message, thread *Thread) error {
+    //ensure owner or not?
+    qm := make(map[string]interface{})
+    qm["_id"] = bson.ObjectIdHex(tId)
+    if ownerId != "" {
+        qm["owner.id"] = bson.ObjectIdHex(ownerId)
+    }
+    err := tColl.Find(qm).One(&thread)
     if err != nil {
-        http.Error(w, "Can't get your thread", http.StatusInternalServerError)
-        return
+        return errors.New(err.Error())
     }
     for i := len(thread.Messages)-1; i >= 0; i-- {
         if thread.Messages[i].From != nMsg.From {
@@ -149,28 +204,20 @@ func ReplyThread(w http.ResponseWriter, r *http.Request) {
     }
     //found?
     if nMsg.To == "" {
-        http.Error(w, "Can't do this, loop will be", http.StatusInternalServerError)
-        return
+        return errors.New("Can't do this, loop will be")
     }
     //ready for update
-    err = tColl.Update(bson.M{"_id": bson.ObjectIdHex(tId), "owner.id": bson.ObjectIdHex(context.Get(r, userId).(string))}, bson.M{"$push": bson.M{"messages": nMsg}})
+    err = tColl.Update(qm, bson.M{"$push": bson.M{"messages": nMsg}})
     if err != nil {
-        if err == mgo.ErrNotFound{
-            http.Error(w, "NOT FOUND", http.StatusNotFound)
-            return
-        }
-        log.Fatal("Can't update document %v\n", err)
-        http.Error(w, "Can't update document", http.StatusInternalServerError)
-        return
+        /*if err == mgo.ErrNotFound{
+            return errors.New("Can't update your thread")
+        }*/
+        return errors.New("Can't update your thread")
     }
-    //everything ok, send the mail
-    //go NewMailProvider(config).SendMail(thread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
-
-    // return the updated thread
-    thread.Messages = append(thread.Messages, nMsg)
-    JSONResponse(w, thread)
+    //update the thread struct
+    thread.Messages = append(thread.Messages, *nMsg)
+    return nil
 }
-
 
 func JSONResponse(w http.ResponseWriter, m interface{}) {
     j, err := json.Marshal(m)
