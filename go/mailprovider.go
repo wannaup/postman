@@ -52,6 +52,12 @@ type MandrillMsg struct {
    	Headers map[string]string 	`json:"headers"`
 }
 
+type MandrillEvent struct {
+    Ts      int     `json:"ts"`
+    Event   string  `json:"event"`
+    Msg   MandrillMsg  `json:"msg"`
+}
+
 
 type MandrillMailProvider struct {
 	InboundEmailDomain 	string
@@ -80,7 +86,7 @@ func (m *MandrillMailProvider) SendMail(threadId string, from string, to []strin
 	r, body, errs := gorequest.New().Post(m.ApiUrl).
 		Send(postData).
   		End()
-  	if r.StatusCode != http.StatusOK || errs != nil {
+  	if errs != nil || r.StatusCode != http.StatusOK {
   		log.Println("Error sending mail")
   		return false
   	}

@@ -2,15 +2,18 @@
 package main
 
 import (
+"fmt"
 	"bytes"
 	"testing"
 	"github.com/stretchr/testify/require"
 	"encoding/json"
 	"net/http"
     "net/http/httptest"
+    "net/url"
     "reflect"
+    "io/ioutil"
+    "strings"
     "github.com/codegangsta/negroni"
-    "github.com/gorilla/mux"
     "gopkg.in/mgo.v2"
     "gopkg.in/mgo.v2/bson"
 )
@@ -31,16 +34,15 @@ var TestThread = []byte(`{
 }`)
 var TestReplyMsg = []byte(`{"from": "pinco@modnar.com","msg": "hello too!"}`)
 var TestInsertedReplyMsg = []byte(`{"from": "pinco@modnar.com","to": "pinco@random.com","msg": "hello too!"}`)
+var TestInsertedInboundMsg = []byte(`{"from": "pinco@test.com","to": "pinco@modnar.com","msg": "A test message"}`)
 var TestBadJSON = []byte(`{"from": "pinco@random.com","to": `)
-
-var negro = negroni.Classic()
+var negro *negroni.Negroni
 var createdThreadId bson.ObjectId
 
 func init() {
     PreFlight("conf_debug.json")
-	router := mux.NewRouter().StrictSlash(true)
     //setup routing and middleware     
-    PrepareRouting(router, negro)
+    negro = StirNegroni()
     //clean db
     ResetDB()
 }
@@ -60,22 +62,9 @@ func ResetDB() {
     }
 }
 
-//test not auth header and invalid JSON
-func TestBadRequest(t *testing.T) {
-	//no auth
-	request := BuildJSONReq("POST", "/threads", TestMsg)
-    response := httptest.NewRecorder()
-    negro.ServeHTTP(response, request)
-    require := require.New(t)
-    require.Equal(response.Code, http.StatusBadRequest)
-    //bad json
-    request = BuildJSONReq("POST", "/threads", TestBadJSON)
-    response = httptest.NewRecorder()
-    negro.ServeHTTP(response, request)
-    require.Equal(response.Code, http.StatusBadRequest)
-}
-
 func TestCreateThread(t *testing.T) {
+    proofInvalidJSON("/threads",t)
+    proofNoAuth("/threads", "POST", TestMsg, t)
 	request := BuildJSONReq("POST", "/threads", TestMsg)
 	AuthRequest(request, TestAuthHeader)
     response := httptest.NewRecorder()
@@ -96,6 +85,7 @@ func TestCreateThread(t *testing.T) {
 }
 
 func TestGetAllThreads(t *testing.T) {
+    proofNoAuth("/threads", "GET", nil, t)
 	request, _ := http.NewRequest("GET", "/threads", nil)
 	AuthRequest(request, TestAuthHeader)
     response := httptest.NewRecorder()
@@ -116,6 +106,7 @@ func TestGetAllThreads(t *testing.T) {
 
 //test we can correctly get a specific thread
 func TestGetOneThread(t *testing.T) {
+    proofNoAuth("/threads/" + createdThreadId.Hex(), "GET", nil, t)
 	request, _ := http.NewRequest("GET", "/threads/" + createdThreadId.Hex(), nil)
     AuthRequest(request, TestAuthHeader)
     response := httptest.NewRecorder()
@@ -136,6 +127,8 @@ func TestGetOneThread(t *testing.T) {
 
 //test we can correctly reply to a thread
 func TestReplyThread(t *testing.T) {
+    proofInvalidJSON("/threads/" + createdThreadId.Hex() + "/reply", t)
+    proofNoAuth("/threads/" + createdThreadId.Hex() + "/reply", "POST", TestReplyMsg, t)
 	request := BuildJSONReq("POST", "/threads/" + createdThreadId.Hex() + "/reply", TestReplyMsg)
     AuthRequest(request, TestAuthHeader)
     response := httptest.NewRecorder()
@@ -158,6 +151,53 @@ func TestReplyThread(t *testing.T) {
     require.Equal(reflect.DeepEqual(tt, nmt), true)
 }
 
+//test we can correctly receive inbound requests from mail provider
+func TestInbound(t *testing.T) {
+    proofInvalidJSON("/inbound", t)
+    //replace the inbound email for the existing thread in the mandrill request
+    mReq := strings.Replace(string(TestMandrillInbound), "$INBOUNDMAIL$", createdThreadId.Hex() + "@" + config["INBOUND_EMAIL_DOMAIN"], 1)
+    data := url.Values{}
+    data.Set("mandrill_events", mReq)
+    request, _ := http.NewRequest("POST", "/inbound", bytes.NewBufferString(data.Encode()))
+    request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+    response := httptest.NewRecorder()
+    negro.ServeHTTP(response, request)
+    body, _ := ioutil.ReadAll(response.Body)
+    fmt.Println(string(body))
+    require := require.New(t)
+    require.Equal(response.Code, http.StatusOK)
+    //now check it was correctly added
+    request, _ = http.NewRequest("GET", "/threads/" + createdThreadId.Hex(), nil)
+    AuthRequest(request, TestAuthHeader)
+    response = httptest.NewRecorder()
+    negro.ServeHTTP(response, request)
+    require.Equal(response.Code, http.StatusOK)
+    var nt Thread
+    UnmarshalObject(response.Body, &nt)
+    //build the truth msg
+    var nm Message
+    err := json.NewDecoder(bytes.NewBuffer(TestInsertedInboundMsg)).Decode(&nm)
+    require.Nil(err)
+    require.Equal(reflect.DeepEqual(nm, nt.Messages[len(nt.Messages) -1]), true)
+
+}
+
+func proofInvalidJSON(url string, t *testing.T){
+    request := BuildJSONReq("POST", url, TestBadJSON)
+    AuthRequest(request, TestAuthHeader)
+    response := httptest.NewRecorder()
+    negro.ServeHTTP(response, request)
+    require := require.New(t) 
+    require.Equal(response.Code, http.StatusBadRequest)
+}
+
+func proofNoAuth(url string, method string, body []byte, t *testing.T){
+    request := BuildJSONReq(method, url, body)
+    response := httptest.NewRecorder()
+    negro.ServeHTTP(response, request)
+    require := require.New(t)
+    require.Equal(response.Code, http.StatusBadRequest)
+}
 func BuildJSONReq(method string, url string, mJson []byte) *http.Request{
 	contentReader := bytes.NewBuffer(mJson)
 	req, _ := http.NewRequest(method, url, contentReader)
