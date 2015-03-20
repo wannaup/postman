@@ -1,7 +1,12 @@
 # Postman
 A Scala mail to threaded messaging microservice
 
+## Commands
+
+* Run test with coverage: `sbt clean coverage test`
+* Create coverage report: `sbt coverageReport`
+
 ## TODO:
 
 * Keep it simple, refactor... 
-* Improve tests, at the moment are not so good
+* Add tests

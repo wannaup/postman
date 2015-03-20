@@ -20,6 +20,9 @@ object Database extends Config {
 object Mongo {
   // generate a valid id
   def generate = BSONObjectID.generate.stringify
+  
+//  val command = reactivemongo.core.commands.Count("postman.thread", Some(reactivemongo.bson.BSONDocument()))
+//  val result = wannaup.db.Database.db.command(command)
 }
 
 class Mongo(config: MongoSettings) {
