@@ -1,4 +1,4 @@
-# postman [ ![Codeship Status for wannaup/postman](https://codeship.com/projects/7b0b4400-b115-0132-8a1c-3a7a9fb44a4e/status?branch=master)](https://codeship.com/projects/69724) [![Coverage Status](https://coveralls.io/repos/wannaup/postman/badge.svg)](https://coveralls.io/r/wannaup/postman)
+# postman [ ![Codeship Status for wannaup/postman](https://codeship.com/projects/7b0b4400-b115-0132-8a1c-3a7a9fb44a4e/status?branch=master)](https://codeship.com/projects/69724) [![Coverage Status](https://coveralls.io/repos/wannaup/postman/badge.svg?branch=HEAD)](https://coveralls.io/r/wannaup/postman)
 A mail to threaded messaging microservice in Go and SCALA
 
 ## Requirements
