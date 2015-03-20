@@ -3,6 +3,7 @@
 	"DBHOST": "127.0.0.1:27017",
     "INBOUND_EMAIL_DOMAIN": "",
     "MAIL_PROVIDER": "mandrill",
-    "MANDRILL_API_URL": "https://mandrillapp.com/api/1.0/messages/send.json",
+    "MANDRILL_API_HOST": "https://mandrillapp.com",
+    "MANDRILL_API_URL": "/api/1.0/messages/send.json",
     "MANDRILL_API_KEY": ""
 }

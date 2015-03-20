@@ -17,7 +17,7 @@ import (
 
 const TestAuthHeader string = "Basic NTE4Y2JiMTM4OWRhNzlkM2EyNTQ1M2Y5Om5vcGFzc3c="
 var TestOwnerId string = "518cbb1389da79d3a25453f9"
-var TestMsg = []byte(`{"from": "pinco@random.com","to": "pinco@random.com","msg": "hello!"}`)
+var TestMsg = []byte(`{"from": "pinco@random.com","to": "pinco@modnar.com","msg": "hello!"}`)
 var TestThread = []byte(`{
 	"id":"",
     "owner": {
@@ -25,22 +25,26 @@ var TestThread = []byte(`{
     },
     "messages": [{
         "from": "pinco@random.com",
-        "to": "pinco@random.com",
+        "to": "pinco@modnar.com",
         "msg": "hello!"
     }]
 }`)
+var TestReplyMsg = []byte(`{"from": "pinco@modnar.com","msg": "hello too!"}`)
+var TestInsertedReplyMsg = []byte(`{"from": "pinco@modnar.com","to": "pinco@random.com","msg": "hello too!"}`)
 var TestBadJSON = []byte(`{"from": "pinco@random.com","to": `)
 
 var negro = negroni.Classic()
 var createdThreadId bson.ObjectId
 
 func init() {
+    PreFlight("conf_debug.json")
 	router := mux.NewRouter().StrictSlash(true)
     //setup routing and middleware     
     PrepareRouting(router, negro)
     //clean db
     ResetDB()
 }
+
 
 func ResetDB() {
 	database := "wure" 
@@ -51,7 +55,7 @@ func ResetDB() {
     defer session.Close()
     session.SetMode(mgo.Monotonic, true)
     err = session.DB(database).C("message_threads").DropCollection()
-    if err != nil {
+    if err != nil && err.Error() != "ns not found"{
         panic(err)
     }
 }
@@ -128,6 +132,30 @@ func TestGetOneThread(t *testing.T) {
     tt.Id = createdThreadId
     require.Equal(reflect.DeepEqual(tt, nt), true)
 
+}
+
+//test we can correctly reply to a thread
+func TestReplyThread(t *testing.T) {
+	request := BuildJSONReq("POST", "/threads/" + createdThreadId.Hex() + "/reply", TestReplyMsg)
+    AuthRequest(request, TestAuthHeader)
+    response := httptest.NewRecorder()
+    negro.ServeHTTP(response, request)
+    require := require.New(t)
+    require.Equal(response.Code, http.StatusOK)
+    var nmt Thread
+    UnmarshalObject(response.Body, &nmt)
+    //build the truth struct
+    var tt Thread
+    err := json.NewDecoder(bytes.NewBuffer(TestThread)).Decode(&tt)
+    require.Nil(err)
+    //set the correct Id
+    tt.Id = createdThreadId
+    //add the addedd msg
+    var nm Message
+    err = json.NewDecoder(bytes.NewBuffer(TestInsertedReplyMsg)).Decode(&nm)
+    require.Nil(err)
+    tt.Messages = append(tt.Messages, nm)
+    require.Equal(reflect.DeepEqual(tt, nmt), true)
 }
 
 func BuildJSONReq(method string, url string, mJson []byte) *http.Request{

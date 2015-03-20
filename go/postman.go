@@ -27,14 +27,20 @@ const userId key = 1
 var config map[string]string
 
 func main() {
-    //load configuration
-    LoadConfig(&config)
+    fname := flag.String("c", "conf_debug.json", "path to JSON config file")
+    flag.Parse()
+    PreFlight(*fname)
     router := mux.NewRouter().StrictSlash(true)
     n := negroni.Classic()
     //setup routing and middleware     
     PrepareRouting(router, n)
     //and run
     n.Run(":" + config["PORT"])
+}
+
+func PreFlight(fname string){
+    //load configuration
+    LoadConfig(fname, &config)
 }
 
 //associates the routes to the router
@@ -75,7 +81,7 @@ func CreateThread(w http.ResponseWriter, r *http.Request) {
         log.Fatal(err)
     }
     //actually send out the mail
-    //go NewMailProvider(config).SendMail(nThread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    go NewMailProvider(config).SendMail(nThread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
     //config thread creation
     JSONResponse(w, nThread)
 }
@@ -161,7 +167,7 @@ func ReplyThread(w http.ResponseWriter, r *http.Request) {
     //go NewMailProvider(config).SendMail(thread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
 
     // return the updated thread
-    thread.Messages[len(thread.Messages)] = nMsg
+    thread.Messages = append(thread.Messages, nMsg)
     JSONResponse(w, thread)
 }
 
@@ -229,10 +235,8 @@ func IsUserIdValid(uid string) bool {
 }
 
 //loads the app configuration
-func LoadConfig(config interface{}) {
-    fname := flag.String("c", "conf_debug.json", "path to JSON config file")
-    flag.Parse()
-    file, _ := os.Open(*fname)
+func LoadConfig(fname string, config interface{}) {
+    file, _ := os.Open(fname)
     defer file.Close()
     decoder := json.NewDecoder(file)
     err := decoder.Decode(config)
