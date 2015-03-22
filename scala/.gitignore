@@ -3,6 +3,8 @@
 ### Scala ###
 *.class
 *.log
+.classpath
+.project
 
 # sbt specific
 .cache
@@ -46,3 +48,4 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
+/bin/

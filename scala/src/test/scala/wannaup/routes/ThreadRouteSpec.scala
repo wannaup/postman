@@ -35,7 +35,6 @@ class ThreadRouteSpec extends Specification with Specs2RouteTest
 
     "create a new thread when POST a message to /threads" in {
       val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(UserData.user1.id, "doesn't matter man"))
-
       Post("/threads", MessageData.msg0) ~> addHeader(authHeader) ~> threadRoute.route ~> check {
         response.status should be(StatusCodes.OK)
         val respThread = responseAs[Thread]
@@ -48,7 +47,6 @@ class ThreadRouteSpec extends Specification with Specs2RouteTest
       val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(ThreadData.thread0.owner.id, "doesn't matter man"))
       Await.result(Threads.c.save(ThreadData.thread0), 5.seconds)
       val threadId = ThreadData.thread0.id
-
       Post(s"/threads/$threadId/reply", MessageData.msg0) ~> addHeader(authHeader) ~> threadRoute.route ~> check {
         response.status should be(StatusCodes.OK)
         responseAs[Thread] must be equalTo (ThreadData.thread0)
@@ -68,23 +66,18 @@ class ThreadRouteSpec extends Specification with Specs2RouteTest
     "return all threads of a user when GET threads to /threads" in DropDatabaseBefore {
       val threadOfUser = ThreadData.threads.filter(_.owner.id == ThreadData.thread0.owner.id)
       val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(ThreadData.thread0.owner.id, "doesn't matter man"))
-      val futureThreads = ThreadData.threads.map { t =>
-        Threads.c.save(t)
-      }
+      val futureThreads = ThreadData.threads.map { Threads.c.save(_) }
       Await.result(Future.sequence(futureThreads), 5.seconds)
       Get("/threads") ~> addHeader(authHeader) ~> threadRoute.route ~> check {
         response.status should be(StatusCodes.OK)
         responseAs[List[Thread]].length must be equalTo (ThreadData.threads.length)
-        responseAs[List[Thread]].toSet must equalTo (threadOfUser.toSet)
+        responseAs[List[Thread]].toSet must equalTo(threadOfUser.toSet)
       }
     }
 
     "return 401 if GET threads to /threads with bad credentials" in {
-      val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(UserData.user0.id, "doesn't matter man"))
-
-      Get("/threads") ~> addHeader(authHeader) ~> threadRoute.route ~> check {
-        response.status should be(StatusCodes.OK)
-        //        responseAs[List[Thread]] must be equalTo (List(ThreadData.thread0))
+      Get("/threads") ~> threadRoute.sealRoute(threadRoute.route) ~> check {
+        response.status should be(StatusCodes.Unauthorized)
       }
     }
   }
