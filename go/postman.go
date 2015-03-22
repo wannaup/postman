@@ -92,7 +92,7 @@ func ProcessInbound(w http.ResponseWriter, r *http.Request) {
         nMsg := Message{From: val.Msg.From_email, Msg: val.Msg.Text}
         err = AddThreadReply(tColl, tId, "", &nMsg, &thread)
         if err != nil{
-            log.Fatal("Can't reply thread from inbound: %v\n", err)
+            log.Println("Can't reply thread from inbound: %v\n", err)
             continue
         }
         //send mail 
@@ -114,10 +114,10 @@ func CreateThread(w http.ResponseWriter, r *http.Request) {
     nThread := Thread{bson.NewObjectId(), owner, []Message{nMsg}}
     err = tColl.Insert(nThread)
     if err != nil {
-        log.Fatal(err)
+        panic("Can't create thread:" + err.Error())
     }
     //actually send out the mail
-    go NewMailProvider(config).SendMail(nThread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    go NewMailProvider(config).SendMail(nThread.Id.Hex(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
     //config thread creation
     JSONResponse(w, nThread)
 }
@@ -140,7 +140,7 @@ func GetOneThread(w http.ResponseWriter, r *http.Request) {
     tId := mux.Vars(r)["threadId"]
     //verify threadid is a valid objectid
     if !bson.IsObjectIdHex(tId) {
-        http.Error(w, "NO auth header", http.StatusBadRequest)
+        http.Error(w, "The thread id provided is not valid", http.StatusBadRequest)
         return
     }
     thedb := context.Get(r, db).(*mgo.Database)
@@ -160,7 +160,7 @@ func ReplyThread(w http.ResponseWriter, r *http.Request) {
     tId := mux.Vars(r)["threadId"]
     //verify threadid is a valid objectid
     if !bson.IsObjectIdHex(tId) {
-        http.Error(w, "NO auth header", http.StatusBadRequest)
+        http.Error(w, "Invalid thread id", http.StatusBadRequest)
         return
     }
     //unmarshal the new message to add
@@ -175,11 +175,11 @@ func ReplyThread(w http.ResponseWriter, r *http.Request) {
     tColl := context.Get(r, db).(*mgo.Database).C("message_threads")
     err = AddThreadReply(tColl, tId, context.Get(r, userId).(string), &nMsg, &thread)
     if err != nil{
-        log.Fatal("Can't reply thread: %v", err)
+        log.Println("Can't reply thread: %v", err)
         http.Error(w, "Can't reply thread", http.StatusInternalServerError)
     }
     //everything ok, send the mail
-    go NewMailProvider(config).SendMail(thread.Id.String(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
+    go NewMailProvider(config).SendMail(thread.Id.Hex(), nMsg.From, []string{nMsg.To}, nMsg.Msg)
 
     JSONResponse(w, thread)
 }
@@ -194,7 +194,7 @@ func AddThreadReply(tColl *mgo.Collection, tId string, ownerId string, nMsg *Mes
     }
     err := tColl.Find(qm).One(&thread)
     if err != nil {
-        return errors.New(err.Error())
+        return errors.New("Thread not found")
     }
     for i := len(thread.Messages)-1; i >= 0; i-- {
         if thread.Messages[i].From != nMsg.From {
@@ -209,9 +209,6 @@ func AddThreadReply(tColl *mgo.Collection, tId string, ownerId string, nMsg *Mes
     //ready for update
     err = tColl.Update(qm, bson.M{"$push": bson.M{"messages": nMsg}})
     if err != nil {
-        /*if err == mgo.ErrNotFound{
-            return errors.New("Can't update your thread")
-        }*/
         return errors.New("Can't update your thread")
     }
     //update the thread struct

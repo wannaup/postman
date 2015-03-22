@@ -58,7 +58,6 @@ type MandrillEvent struct {
     Msg   MandrillMsg  `json:"msg"`
 }
 
-
 type MandrillMailProvider struct {
 	InboundEmailDomain 	string
 	ApiUrl 			string
@@ -81,19 +80,18 @@ func (m *MandrillMailProvider) SendMail(threadId string, from string, to []strin
 		rcpts,
 		hdr,
 	}
-	postData := MandrillReq{m.ApiKey,mmsg}
+	postData := MandrillReq{m.ApiKey, mmsg}
 	//send the mail using the HTTP JSON API
 	r, body, errs := gorequest.New().Post(m.ApiUrl).
 		Send(postData).
   		End()
   	if errs != nil || r.StatusCode != http.StatusOK {
-  		log.Println("Error sending mail")
+  		log.Println("Error sending mail: ", errs)
   		return false
   	}
-    //check response is "sent"
+    //check Mandrill response is "sent"
     var resp []map[string]interface{}
     UnmarshalObject(bytes.NewBuffer([]byte(body)), &resp)
-
     if len(resp) < 1 || resp[0]["status"] != "sent"{
     	log.Println("Error sending mail %v", resp)
   		return false
