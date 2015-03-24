@@ -80,19 +80,34 @@ class ThreadService(val mailService: MailService) {
   def reply(threadId: String, message: Message): Future[Option[Thread]] = {
     Threads.c.find(BSONDocument("_id" -> BSONObjectID(threadId))).one[Thread].flatMap {
       case Some(thread) =>
-        val newThread = thread.copy(messages = thread.messages :+ message)
-        Threads.c.update(BSONDocument("_id" -> BSONObjectID(threadId)), thread, upsert = false, multi = false).map { lastError =>
+        val to = message.to.getOrElse(getFirstUtilTo(thread, message))
+        val newThread = thread.copy(messages = thread.messages :+ message.copy(to = Some(to)))
+        Threads.c.update(BSONDocument("_id" -> BSONObjectID(threadId)), newThread, upsert = false, multi = false).map { lastError =>
           val email = Email(
             subject = "",
             html = message.body,
             text = message.body,
             from = message.from,
-            to = message.to.get,
+            to = to,
             replyTo = s"${thread.id}-reply@qualcosa.com")
           mailService.send(email)
-          Some(thread)
+          Some(newThread)
         }
       case None => Future.successful(None)
+    }
+  }
+
+  /**
+   * method for retrieve first util `to` 
+   * @param thread
+   * @param message
+   * @param string containing to
+   */
+  private def getFirstUtilTo(thread: Thread, message: Message): String = {
+    thread.messages.find(m => m.from != message.from || m.to != Some(message.from)) match {
+      case Some(m) if m.from != message.from => m.from
+      case Some(m) if m.to != Some(message.from) => m.to.get
+      case None    => thread.messages.head.to.get // throw exception
     }
   }
 

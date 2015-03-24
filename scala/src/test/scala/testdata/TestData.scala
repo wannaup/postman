@@ -42,7 +42,7 @@ object ThreadData {
       "msg" -> "hello!")
 
   val thread0 = Thread(owner = UserData.user0, messages = List(MessageData.msg0))
-  val thread1 = Thread(owner = UserData.user0, messages = List(MessageData.msg0))
+  val thread1 = Thread(owner = UserData.user0, messages = List(MessageData.msg1, MessageData.msg0, MessageData.msg0))
   val thread2 = Thread(owner = UserData.user0, messages = List(MessageData.msg0))
 
   val threads = List(thread0, thread1, thread2)

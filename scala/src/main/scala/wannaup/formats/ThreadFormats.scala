@@ -53,7 +53,8 @@ object ThreadFormats {
       (__ \ "id").readNullable[String].map(_.getOrElse(BSONObjectID.generate.stringify)) ~
       (__ \ "owner").read[User] ~
       ((__ \ "msgs").read(Reads.list[Message]) orElse
-        (__ \ "msg").read[Message].map { msg => List(msg) }))(Thread.apply _)
+        // check if the to key exists
+        (__ \ "msg").read[Message](MessageFormats.strictRead).map { msg => List(msg) }))(Thread.apply _)
     val writer = (
       (__ \ "id").write[String] ~
       (__ \ "owner").write[User] ~
@@ -67,5 +68,20 @@ object ThreadFormats {
  *
  */
 object MessageFormats {
-  val rest: Format[Message] = Json.format[Message]
+  val rest: Format[Message] = {
+    val reader = (
+      (__ \ "from").read[String](Reads.email) ~
+      (__ \ "to").readNullable[String](Reads.email) ~
+      (__ \ "body").read[String])(Message.apply _)
+    val writer = Json.writes[Message]
+    Format(reader, writer)
+  }
+
+  /**
+   * Require `to` key into json
+   */
+  val strictRead = (
+    (__ \ "from").read[String](Reads.email) ~
+    (__ \ "to").read[String](Reads.email) ~
+    (__ \ "body").read[String])((from, to, body) => Message(from = from, to = Some(to), body = body))
 }

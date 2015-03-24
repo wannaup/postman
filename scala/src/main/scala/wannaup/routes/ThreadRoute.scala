@@ -2,6 +2,7 @@ package wannaup.routes
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.Actor
+import spray.http.StatusCodes
 import spray.routing.HttpService
 import spray.routing.Directives._
 import wannaup.marshallers.ThreadMarshaller
@@ -12,7 +13,7 @@ import wannaup.models._
 // we don't implement our route structure directly in the service actor because
 // we want to be able to test it independently, without having to spin up an actor
 class ThreadRouteActor(val threadService: ThreadService) extends Actor with ThreadRoute {
-  
+
   // the HttpService trait defines only one abstract member, which
   // connects the services environment to the enclosing actor or test
   def actorRefFactory = context
@@ -46,12 +47,12 @@ trait ThreadRoute extends HttpService {
           }
         }
       } ~
-      get {
-        authenticate(BasicAuthentication) { user =>
-          val resp = threadService.get(user.id, 100, 0)
-          complete(resp)
+        get {
+          authenticate(BasicAuthentication) { user =>
+            val resp = threadService.get(user.id, 100, 0)
+            complete(resp)
+          }
         }
-      }
     } ~
     path("threads" / Segment) { threadId =>
       get {
