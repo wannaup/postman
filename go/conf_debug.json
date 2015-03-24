@@ -1,4 +1,5 @@
 {
+	"ENVIRONMENT": "DBG",
 	"PORT": "3001",
 	"DBHOST": "127.0.0.1:27017",
     "INBOUND_EMAIL_DOMAIN": "inbound.bau.it",
