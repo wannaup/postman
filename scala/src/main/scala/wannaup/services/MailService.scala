@@ -2,7 +2,7 @@ package wannaup.services
 
 import scala.concurrent.Future
 import scala.util._
-import akka.actor.ActorSystem
+import akka.actor._
 import spray.http._
 import spray.client.pipelining._
 import spray.httpx.PlayJsonSupport
@@ -52,12 +52,11 @@ object MandrillService {
 /**
  *
  */
-class MandrillService(config: MandrillSettings) extends MailService {
-
+class MandrillService(config: MandrillSettings)(implicit system: ActorSystem) extends MailService {
+  
   import MandrillService._
   import MandrillService.MandrillMarshaller._
 
-  implicit val system = ActorSystem()
   import system.dispatcher // execution context for futures
 
   val key: String = config.key

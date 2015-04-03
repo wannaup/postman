@@ -1,5 +1,6 @@
 package wannaup.routes
 
+import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.Actor
 import spray.http.StatusCodes
@@ -32,10 +33,14 @@ trait ThreadRoute extends HttpService {
   def threadService: ThreadService
 
   val route = {
-    (path("inbound" / Segment) & pathEndOrSingleSlash) { email =>
+    (path("inbound") & pathEndOrSingleSlash) {
       post {
-        threadService.manage(email)
-        complete("Ok")
+        formFields('mandrill_events.as[List[Inbound]]) { events =>
+          val resp = events.map { email =>
+            threadService.manage(email)
+          }
+          complete(Future.sequence(resp))
+        }
       }
     } ~
     (path("threads") & pathEndOrSingleSlash) {
@@ -47,12 +52,12 @@ trait ThreadRoute extends HttpService {
           }
         }
       } ~
-        get {
-          authenticate(BasicAuthentication) { user =>
-            val resp = threadService.get(user.id, 100, 0)
-            complete(resp)
-          }
+      get {
+        authenticate(BasicAuthentication) { user =>
+          val resp = threadService.get(user.id, 100, 0)
+          complete(resp)
         }
+      }
     } ~
     path("threads" / Segment) { threadId =>
       get {

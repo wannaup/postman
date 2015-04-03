@@ -33,6 +33,16 @@ class ThreadRouteSpec extends Specification with Specs2RouteTest
   // tests for Thread service
   "ThreadRoute" should {
 
+    "receiving POST request to /inbound" in {
+      val tId = ThreadData.thread0.id
+      Await.result(Threads.c.save(ThreadData.thread0), 5.seconds)
+      Post("/inbound", FormData(Map("mandrill_events" -> InboundTestData.body(to = tId)))) ~> threadRoute.route ~> check {
+        val dbThread = Await.result(Threads.c.find(BSONDocument("_id" -> BSONObjectID(tId))).one[Thread], 5.seconds)
+        dbThread.get.messages.length should be equalTo (2)
+        response.status should be(StatusCodes.OK)
+      }
+    }
+
     "create a new thread when POST a message to /threads" in {
       val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(UserData.user1.id, "doesn't matter man"))
       Post("/threads", MessageData.msg0) ~> addHeader(authHeader) ~> threadRoute.route ~> check {
@@ -42,17 +52,17 @@ class ThreadRouteSpec extends Specification with Specs2RouteTest
         responseAs[Thread] must be equalTo (dbThread.get)
       }
     }
-//TODO: finish it
-//    "create a new thread when POST a message to /threads without `to` key" in {
-//      val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(UserData.user1.id, "doesn't matter man"))
-//      val message = MessageData.msg0.copy(to = None)
-//      Post("/threads", message) ~> addHeader(authHeader) ~> threadRoute.route ~> check {
-//        response.status should be(StatusCodes.OK)
-//        val respThread = responseAs[Thread]
-//        val dbThread = Await.result(Threads.c.find(BSONDocument("_id" -> BSONObjectID(respThread.id))).one[Thread], 5.seconds)
-//        responseAs[Thread] must be equalTo (dbThread.get)
-//      }
-//    }
+    //TODO: finish it we need error, BadRequest
+    //    "create a new thread when POST a message to /threads without `to` key" in {
+    //      val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(UserData.user1.id, "doesn't matter man"))
+    //      val message = MessageData.msg0.copy(to = None)
+    //      Post("/threads", message) ~> addHeader(authHeader) ~> threadRoute.route ~> check {
+    //        response.status should be(StatusCodes.OK)
+    //        val respThread = responseAs[Thread]
+    //        val dbThread = Await.result(Threads.c.find(BSONDocument("_id" -> BSONObjectID(respThread.id))).one[Thread], 5.seconds)
+    //        responseAs[Thread] must be equalTo (dbThread.get)
+    //      }
+    //    }
 
     "reply in a thread when POST a new message to /threads/:theardId/reply" in {
       val authHeader = HttpHeaders.`Authorization`(BasicHttpCredentials(ThreadData.thread0.owner.id, "doesn't matter man"))

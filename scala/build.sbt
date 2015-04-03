@@ -1,3 +1,4 @@
+import NativePackagerKeys._
 val akkaVersion = "2.3.9"
 val sprayVerion = "1.3.2"
 val playVersion = "2.3.8"
@@ -10,6 +11,7 @@ libraryDependencies ++= Seq(
     "com.typesafe.play"   %%  "play-json"     % playVersion,
     "com.typesafe.akka"   %%  "akka-actor"    % akkaVersion,
     "com.typesafe.akka"   %%  "akka-testkit"  % akkaVersion % "test",
+    "ch.qos.logback" 	  %   "logback-classic" % "1.0.9",
     "org.reactivemongo"   %%  "reactivemongo" % rmongoVersion,
     "org.specs2"          %%  "specs2-core"   % "2.3.11" 	% "test"
 )
@@ -31,4 +33,5 @@ lazy val root = (project in file("."))
 		name := "postman"
 )
 
+packageArchetype.java_application
 Revolver.settings

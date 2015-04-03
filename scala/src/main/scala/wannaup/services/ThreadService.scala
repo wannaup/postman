@@ -6,6 +6,7 @@ import reactivemongo.bson._
 import reactivemongo.api._
 import wannaup.db.Mongo
 import wannaup.models._
+import wannaup.util.Logger._
 
 /**
  *
@@ -19,17 +20,23 @@ class ThreadService(val mailService: MailService) {
    * @param email the incoming email
    * @return
    */
-  def manage(email: String): Unit = {
-    val id = email.replace("-reply@inbound.domain.com", "")
-    val message = Message(from = "", to = Some(""), body = "")
-    Threads.c.find(BSONDocument("_id" -> BSONObjectID(id))).one[Thread].map {
-      case Some(thread) =>
-        val updatedThread = thread.copy(messages = thread.messages :+ message)
-        Threads.c.save(updatedThread).map { lastError =>
-          //TODO: log error in case
-        }
-      case None => //TODO: log error man!
-    }
+  def manage(email: Inbound): Future[Message] = {
+    val id = BSONObjectID.parse(email.receivedEmail.replace("-reply@inbound.domain.com", ""))
+    val message = Message(from = email.from.email, to = Some(email.to.head.email), body = email.html)
+    id.map { oid =>
+      Threads.c.find(BSONDocument("_id" -> oid)).one[Thread].flatMap {
+        case Some(thread) =>
+          val updatedThread = thread.copy(messages = thread.messages :+ message)
+          Threads.c.save(updatedThread).map { lastError => message }
+        case None =>
+          log.info(s"hey, a thread was not found!! id: $id")
+          throw new Exception(s"Oh shit! message with ($id) was not processed!")
+      }
+    }.recover {
+      case e: Exception =>
+        log.info(s"hey, an error!! e: ${e.getMessage}")
+        Future.successful(message)
+    }.get
   }
 
   /**
@@ -98,16 +105,16 @@ class ThreadService(val mailService: MailService) {
   }
 
   /**
-   * method for retrieve first util `to` 
+   * method for retrieve first util `to`
    * @param thread
    * @param message
    * @param string containing to
    */
   private def getFirstUtilTo(thread: Thread, message: Message): String = {
     thread.messages.find(m => m.from != message.from || m.to != Some(message.from)) match {
-      case Some(m) if m.from != message.from => m.from
+      case Some(m) if m.from != message.from     => m.from
       case Some(m) if m.to != Some(message.from) => m.to.get
-      case None    => thread.messages.head.to.get // throw exception
+      case None                                  => thread.messages.head.to.get // throw exception
     }
   }
 

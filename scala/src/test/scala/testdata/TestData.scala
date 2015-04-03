@@ -47,3 +47,27 @@ object ThreadData {
 
   val threads = List(thread0, thread1, thread2)
 }
+
+object InboundTestData {
+  
+  def body(to: String) = s"""
+    [{
+      "ts": 198743897,
+      "event": "inbound",
+      "msg": {
+          "html": "<p>Hey!</p>",
+          "text": "Hey!",
+          "subject": "this is subject",
+          "from_email": "gino.random@test.com",
+          "from_name": "Gino Random",
+          "email": "${to}-reply@inbound.domain.com",
+          "to": [
+            {
+                  "email": "ciao@email.com",
+                  "name": "Pallone Lavegas"
+              }
+          ]
+      }
+    }]
+    """
+}

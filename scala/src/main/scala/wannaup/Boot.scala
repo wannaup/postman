@@ -8,6 +8,7 @@ import spray.can.Http
 import scala.concurrent.duration._
 import com.typesafe.config._
 
+import wannaup.util.Logger._
 import wannaup.routes._
 import wannaup.services._
 
@@ -19,9 +20,13 @@ object Boot extends App with Config {
   // we need an ActorSystem to host our application in
   implicit val system = ActorSystem("on-spray-can")
 
+  //connect to DB
+  log.debug(s"started db: ${wannaup.db.Database.driver.uri}")
+
   // create service to inject into our route
   val mandrillService = new MandrillService(MandrillSettings(key = config.getString("mandrill.key")))
-  val threadService = new ThreadService(mandrillService /*, threadCollection*/ )
+  val threadService = new ThreadService(mandrillService)
+  
   // create and start our service actor
   val service = system.actorOf(Props(new ThreadRouteActor(threadService)), "postman-service")
 
@@ -30,21 +35,12 @@ object Boot extends App with Config {
   IO(Http) ? Http.Bind(service, interface = config.getString("server.host"), port = config.getInt("server.port"))
 
   sys.addShutdownHook(system.shutdown())
-}
 
+}
 
 /**
  *
  */
 trait Config {
   val config = ConfigFactory.load()
-}
-
-
-/**
- *
- */
-trait Logging {
-  //  import akka.event.Logging
-  //  val log = Logging
 }
