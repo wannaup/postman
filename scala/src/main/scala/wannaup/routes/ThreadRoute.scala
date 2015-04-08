@@ -1,8 +1,7 @@
 package wannaup.routes
 
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
-import akka.actor.Actor
+import scala.concurrent._
+import akka.actor._
 import spray.http.StatusCodes
 import spray.routing.HttpService
 import spray.routing.Directives._
@@ -10,6 +9,14 @@ import wannaup.marshallers.ThreadMarshaller
 import wannaup.services.ThreadService
 import wannaup.authenticators._
 import wannaup.models._
+
+//
+object ThreadRouteActor {
+  // Factory method for our actor Props
+  def props(threadService: ThreadService): Props = Props(new ThreadRouteActor(threadService))
+  
+//  def props(threadService: ActorRef): Props = Props(new ThreadRouteActor(threadService))
+}
 
 // we don't implement our route structure directly in the service actor because
 // we want to be able to test it independently, without having to spin up an actor
@@ -29,7 +36,8 @@ class ThreadRouteActor(val threadService: ThreadService) extends Actor with Thre
 trait ThreadRoute extends HttpService {
 
   import ThreadMarshaller._
-
+  implicit val ec: ExecutionContext = scala.concurrent.ExecutionContext.Implicits.global
+  
   def threadService: ThreadService
 
   val route = {

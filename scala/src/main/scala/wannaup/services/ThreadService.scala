@@ -15,6 +15,8 @@ class ThreadService(val mailService: MailService) {
   // import implicit format BSON <--> Thread
   import wannaup.models.Threads._
 
+  def replyTo(identificator: String): String = s"${identificator}-reply@inbound.domain.com"
+
   /**
    * Manage an incoming email, retrieve id and then search thread linked to email
    * @param email the incoming email
@@ -27,6 +29,15 @@ class ThreadService(val mailService: MailService) {
       Threads.c.find(BSONDocument("_id" -> oid)).one[Thread].flatMap {
         case Some(thread) =>
           val updatedThread = thread.copy(messages = thread.messages :+ message)
+          val to = message.to.getOrElse(getFirstUtilTo(thread, message))
+          val emailToSend = Email(
+            subject = "",
+            html = message.body,
+            text = message.body,
+            from = message.from,
+            to = to,
+            replyTo = replyTo(thread.id))
+          mailService.send(emailToSend)
           Threads.c.save(updatedThread).map { lastError => message }
         case None =>
           log.info(s"hey, a thread was not found!! id: $id")
@@ -55,7 +66,7 @@ class ThreadService(val mailService: MailService) {
         text = message.body,
         from = message.from,
         to = message.to.get,
-        replyTo = s"${thread.id}-reply@qualcosa.com")
+        replyTo = replyTo(thread.id))
       mailService.send(email)
       thread
     }
@@ -96,7 +107,7 @@ class ThreadService(val mailService: MailService) {
             text = message.body,
             from = message.from,
             to = to,
-            replyTo = s"${thread.id}-reply@qualcosa.com")
+            replyTo = replyTo(thread.id))
           mailService.send(email)
           Some(newThread)
         }
